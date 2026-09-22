@@ -28,24 +28,19 @@ jobs:
       # 3. 修改 ZooKeeper 版本并排除缺失的旧版依赖
       - name: Modify ZooKeeper version
         run: |
-          sed -i \
-            's/<zookeeper.version>3.4.14<\/zookeeper.version>/<zookeeper.version>3.4.5<\/zookeeper.version>/' \
-            dolphinscheduler-bom/pom.xml
-
           python3 -c "
-          with open('dolphinscheduler-bom/pom.xml', 'r') as f:
+          with open('dolphinscheduler-bom/pom.xml', 'r', encoding='utf-8') as f:
               content = f.read()
 
-          target = '''                    <exclusion>
-                          <groupId>com.github.spotbugs</groupId>
-                          <artifactId>spotbugs-annotations</artifactId>
-                      </exclusion>'''
+          # Replace zookeeper.version in zk-3.4 profile
+          content = content.replace('<zookeeper.version>3.4.14</zookeeper.version>', '<zookeeper.version>3.4.5</zookeeper.version>')
 
-          exclusions = '''                    <exclusion>
-                          <groupId>com.github.spotbugs</groupId>
-                          <artifactId>spotbugs-annotations</artifactId>
-                      </exclusion>
-                      <exclusion>
+          # Locate zookeeper dependency block and add exclusions
+          zk_pos = content.find('<artifactId>zookeeper</artifactId>')
+          if zk_pos != -1:
+              excl_pos = content.find('</exclusions>', zk_pos)
+              if excl_pos != -1:
+                  to_insert = '''                    <exclusion>
                           <groupId>com.sun.jmx</groupId>
                           <artifactId>jmxri</artifactId>
                       </exclusion>
@@ -56,18 +51,21 @@ jobs:
                       <exclusion>
                           <groupId>javax.jms</groupId>
                           <artifactId>jms</artifactId>
-                      </exclusion>'''
-
-          if target in content:
-              content = content.replace(target, exclusions)
-              with open('dolphinscheduler-bom/pom.xml', 'w') as f:
-                  f.write(content)
-              print('Successfully added exclusions for ZooKeeper 3.4.5')
+                      </exclusion>
+  '''
+                  content = content[:excl_pos] + to_insert + content[excl_pos:]
+                  with open('dolphinscheduler-bom/pom.xml', 'w', encoding='utf-8') as f:
+                      f.write(content)
+                  print('Successfully added ZooKeeper 3.4.5 exclusions and updated version.')
+              else:
+                  print('ERROR: Could not find </exclusions> after zookeeper artifactId')
+                  exit(1)
           else:
-              print('Target string not found in pom.xml')
+              print('ERROR: Could not find zookeeper artifactId')
+              exit(1)
           "
 
-          echo "ZooKeeper version:"
+          echo "Check ZooKeeper version in pom.xml:"
           grep -n "zookeeper.version" dolphinscheduler-bom/pom.xml
 
       # 4. 自动修复格式
@@ -106,6 +104,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: success()
+        continue-on-error: true
         with:
           tag_name: 3.2.2-zk345
           name: DolphinScheduler 3.2.2 (ZooKeeper 3.4.5)
