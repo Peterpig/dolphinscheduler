@@ -3,6 +3,9 @@ name: Build DolphinScheduler 3.2.2 with ZooKeeper 3.4.5
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -22,12 +25,47 @@ jobs:
           java-version: '8'
           cache: maven
 
-      # 3. 修改 ZooKeeper 版本
+      # 3. 修改 ZooKeeper 版本并排除缺失的旧版依赖
       - name: Modify ZooKeeper version
         run: |
           sed -i \
             's/<zookeeper.version>3.4.14<\/zookeeper.version>/<zookeeper.version>3.4.5<\/zookeeper.version>/' \
             dolphinscheduler-bom/pom.xml
+
+          python3 -c "
+          with open('dolphinscheduler-bom/pom.xml', 'r') as f:
+              content = f.read()
+
+          target = '''                    <exclusion>
+                          <groupId>com.github.spotbugs</groupId>
+                          <artifactId>spotbugs-annotations</artifactId>
+                      </exclusion>'''
+
+          exclusions = '''                    <exclusion>
+                          <groupId>com.github.spotbugs</groupId>
+                          <artifactId>spotbugs-annotations</artifactId>
+                      </exclusion>
+                      <exclusion>
+                          <groupId>com.sun.jmx</groupId>
+                          <artifactId>jmxri</artifactId>
+                      </exclusion>
+                      <exclusion>
+                          <groupId>com.sun.jdmk</groupId>
+                          <artifactId>jmxtools</artifactId>
+                      </exclusion>
+                      <exclusion>
+                          <groupId>javax.jms</groupId>
+                          <artifactId>jms</artifactId>
+                      </exclusion>'''
+
+          if target in content:
+              content = content.replace(target, exclusions)
+              with open('dolphinscheduler-bom/pom.xml', 'w') as f:
+                  f.write(content)
+              print('Successfully added exclusions for ZooKeeper 3.4.5')
+          else:
+              print('Target string not found in pom.xml')
+          "
 
           echo "ZooKeeper version:"
           grep -n "zookeeper.version" dolphinscheduler-bom/pom.xml
@@ -57,9 +95,21 @@ jobs:
             -Dincludes=org.apache.zookeeper:zookeeper \
             -Dzk-3.4
 
-      # 7. 上传 DolphinScheduler 安装包
+      # 7. 上传 DolphinScheduler 安装包到 Workflow Artifact
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: dolphinscheduler-3.2.2-zk345
           path: dolphinscheduler-dist/target/*.tar.gz
+
+      # 8. 发布到 GitHub Releases 供直接公开下载
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: 3.2.2-zk345
+          name: DolphinScheduler 3.2.2 (ZooKeeper 3.4.5)
+          body: "Build DolphinScheduler 3.2.2 with ZooKeeper 3.4.5"
+          files: dolphinscheduler-dist/target/*.tar.gz
+          draft: false
+          prerelease: false
