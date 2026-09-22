@@ -1,4 +1,4 @@
-name: Build DolphinScheduler 3.2.2 with zookeeper.version=3.4.5-cdh6.3.2
+name: Build DolphinScheduler 3.2.2 with ZooKeeper 3.4.5-cdh6.3.2
 
 on:
   workflow_dispatch:
@@ -26,6 +26,10 @@ jobs:
             dolphinscheduler-bom/pom.xml
 
           grep -n "zookeeper.version" dolphinscheduler-bom/pom.xml
+
+      - name: Apply Spotless
+        run: |
+          ./mvnw spotless:apply
 
       - name: Build
         run: |
