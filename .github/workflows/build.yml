@@ -1,4 +1,3 @@
-```yaml
 name: Build DolphinScheduler 3.2.2 for ZooKeeper 3.4.x
 
 on:
@@ -97,4 +96,3 @@ jobs:
           files: dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
           draft: false
           prerelease: false
-```
