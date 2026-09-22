@@ -1,4 +1,4 @@
-name: Build DolphinScheduler 3.2.2 with ZooKeeper 3.4.5-cdh6.3.2
+name: Build DolphinScheduler 3.2.2 with ZooKeeper 3.4.5
 
 on:
   workflow_dispatch:
@@ -22,30 +22,33 @@ jobs:
 
       - name: Modify ZooKeeper version
         run: |
-          sed -i 's/<zookeeper.version>3.4.14<\/zookeeper.version>/<zookeeper.version>3.4.5<\/zookeeper.version>/' \
+          sed -i \
+            's/<zookeeper.version>3.4.14<\/zookeeper.version>/<zookeeper.version>3.4.5<\/zookeeper.version>/' \
             dolphinscheduler-bom/pom.xml
 
           grep -n "zookeeper.version" dolphinscheduler-bom/pom.xml
 
       - name: Apply Spotless
-        run: |
-          ./mvnw spotless:apply
+        run: ./mvnw spotless:apply
 
       - name: Build
         run: |
           ./mvnw clean install \
             -Prelease \
             -Dzk-3.4 \
-            -DskipTests
+            -DskipTests \
+            -Dspotless.check.skip=true \
+            -U \
+            -T 1
 
-      - name: Check ZooKeeper dependency
+      - name: Verify ZooKeeper
         run: |
           ./mvnw dependency:tree \
             -Dincludes=org.apache.zookeeper:zookeeper \
             -Dzk-3.4
 
-      - name: Upload distribution
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: dolphinscheduler-3.2.2-zk345
-          path: dolphinscheduler-dist/target/apache-dolphinscheduler-3.2.2-bin.tar.gz
+          path: dolphinscheduler-dist/target/*.tar.gz
