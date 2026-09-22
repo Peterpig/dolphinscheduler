@@ -27,7 +27,7 @@ jobs:
           java-version: '8'
           cache: maven
 
-      # 3. Check build environment
+      # 3. Check environment
       - name: Check Build Environment
         run: |
           java -version
@@ -38,7 +38,7 @@ jobs:
         run: |
           ./mvnw spotless:apply
 
-      # 5. Fix guava-retrying transitive Guava dependency
+      # 5. Fix guava-retrying dependency
       - name: Patch guava-retrying Dependency
         run: |
           python3 - <<'PY'
@@ -73,31 +73,47 @@ jobs:
               )
 
           path.write_text(text)
-
           print("Patched dolphinscheduler-common/pom.xml")
           PY
 
-          echo "===== Verify guava-retrying patch ====="
           grep -A12 -B2 "guava-retrying" dolphinscheduler-common/pom.xml
 
-      # 6. Build binary package
+      # 6. Build
       - name: Build Binary Package
         run: |
           ./mvnw clean package \
             -Prelease \
             -Dzk-3.4 \
-            -Dbuild.assembly.skip=false \
             -Dmaven.test.skip=true \
             -Dspotless.check.skip=true \
             -DskipDepCheck=true \
             -Dcheckstyle.skip=true \
             -T 2C
 
-      # 7. Verify final binary package
+      # 7. Run official 3.2.2 package consolidation script manually
+      - name: Consolidate Binary Package
+        run: |
+          set -euxo pipefail
+
+          SCRIPT="dolphinscheduler-dist/src/main/assembly/create-symlinks.sh"
+
+          test -f "$SCRIPT"
+
+          echo "===== Before consolidation ====="
+          ls -lh dolphinscheduler-dist/target/apache-dolphinscheduler-3.2.2-bin.tar.gz
+
+          echo
+          echo "===== Running create-symlinks.sh ====="
+          bash "$SCRIPT"
+
+          echo
+          echo "===== After consolidation ====="
+          ls -lh dolphinscheduler-dist/target/apache-dolphinscheduler-3.2.2-bin.tar.gz
+
+      # 8. Verify final package
       - name: Verify Generated Artifacts
         run: |
-          echo "===== dolphinscheduler-dist/target ====="
-          ls -lh dolphinscheduler-dist/target/
+          set -euo pipefail
 
           PACKAGE="dolphinscheduler-dist/target/apache-dolphinscheduler-3.2.2-bin.tar.gz"
 
@@ -109,12 +125,13 @@ jobs:
           echo "Final binary package size: ${SIZE_MB} MB"
 
           if [ "$SIZE" -gt 524288000 ]; then
-            echo "ERROR: Binary package is larger than 500 MB"
-            echo "The final assembly/symlink consolidation step may not have executed."
+            echo "ERROR: Final binary package is larger than 500 MB"
             exit 1
           fi
 
-      # 8. Upload artifact
+          echo "Package size check passed."
+
+      # 9. Upload artifact
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -122,7 +139,7 @@ jobs:
           path: dolphinscheduler-dist/target/apache-dolphinscheduler-3.2.2-bin.tar.gz
           if-no-files-found: error
 
-      # 9. Create GitHub Release
+      # 10. Create GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: success()
@@ -139,6 +156,7 @@ jobs:
             - Maven profile: -Dzk-3.4
             - Guava: 31.1-jre
             - guava-retrying transitive Guava dependency excluded
+            - create-symlinks.sh executed after package assembly
 
             Built for ZooKeeper 3.4.x compatibility.
           files: dolphinscheduler-dist/target/apache-dolphinscheduler-3.2.2-bin.tar.gz
