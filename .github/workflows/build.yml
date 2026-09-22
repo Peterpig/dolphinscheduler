@@ -1,4 +1,4 @@
-name: Build DolphinScheduler 3.2.2 with ZooKeeper 3.4.5
+name: Build DolphinScheduler 3.2.2 for ZooKeeper 3.4.x Server
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1. 拉取仓库代码（由于是你 Fork 的仓库，直接拉取当前分支或指定 3.2.2 标签）
+      # 1. 拉取仓库代码
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -23,59 +23,12 @@ jobs:
           java-version: '8'
           cache: maven
 
-      # 3. 强制覆盖 ZooKeeper 版本，并全局排除失效的 Oracle/Sun 依赖
-      - name: Patch ZooKeeper Version and Exclusions
-        run: |
-          # 1. 修改 BOM 中的 ZooKeeper 版本为 3.4.5
-          sed -i 's/<zookeeper.version>.*<\/zookeeper.version>/<zookeeper.version>3.4.5<\/zookeeper.version>/g' dolphinscheduler-bom/pom.xml
-
-          # 2. 在 zookeeper 模块的 pom.xml 中为 zookeeper 依赖注入 exclusions 排除项
-          python3 -c "
-          import re
-
-          zk_pom = 'dolphinscheduler-registry/dolphinscheduler-registry-plugins/dolphinscheduler-registry-zookeeper/pom.xml'
-          content = open(zk_pom, 'r', encoding='utf-8').read()
-
-          exclusions_block = '''<exclusions>
-                  <exclusion>
-                      <groupId>com.sun.jmx</groupId>
-                      <artifactId>jmxri</artifactId>
-                  </exclusion>
-                  <exclusion>
-                      <groupId>com.sun.jdmk</groupId>
-                      <artifactId>jmxtools</artifactId>
-                  </exclusion>
-                  <exclusion>
-                      <groupId>javax.jms</groupId>
-                      <artifactId>jms</artifactId>
-                  </exclusion>
-                  <exclusion>
-                      <groupId>org.slf4j</groupId>
-                      <artifactId>slf4j-log4j12</artifactId>
-                  </exclusion>
-              </exclusions>'''
-
-          # 在 dolphinscheduler-registry-zookeeper 的 zookeeper 依赖项中强制写入 exclusions
-          if '<artifactId>zookeeper</artifactId>' in content:
-              # 替换闭合标签前插入 exclusion
-              content = re.sub(
-                  r'(<artifactId>zookeeper</artifactId>\s*)</dependency>',
-                  r'\1' + exclusions_block + '\n        </dependency>',
-                  content
-              )
-              open(zk_pom, 'w', encoding='utf-8').write(content)
-              print('Successfully patched zookeeper exclusions.')
-          "
-
-          echo "Verify ZooKeeper version setting in BOM:"
-          grep -n "zookeeper.version" dolphinscheduler-bom/pom.xml
-
-      # 4. 自动修复并格式化代码
+      # 3. 自动修复并格式化代码
       - name: Apply Spotless
         run: ./mvnw spotless:apply
 
-      # 5. 从根目录完整编译打包（跳过测试与质量检查）
-      - name: Full Build & Install
+      # 4. 开启 -Dzk-3.4 进行全量编译打包
+      - name: Full Build with ZK 3.4 Profile
         run: |
           ./mvnw clean install \
             -Dzk-3.4 \
@@ -85,30 +38,22 @@ jobs:
             -Dcheckstyle.skip=true \
             -T 2C
 
-      # 6. 验证最终使用的 ZooKeeper 依赖版本
-      - name: Verify ZooKeeper Dependency
-        run: |
-          ./mvnw dependency:tree \
-            -pl dolphinscheduler-registry/dolphinscheduler-registry-plugins/dolphinscheduler-registry-zookeeper \
-            -Dincludes=org.apache.zookeeper:zookeeper \
-            -Dzk-3.4
-
-      # 7. 上传编译产物到 Workflow Artifact
+      # 5. 上传编译产物到 Workflow Artifact
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dolphinscheduler-3.2.2-zk345
+          name: dolphinscheduler-3.2.2-zk34
           path: dolphinscheduler-dist/target/*.tar.gz
 
-      # 8. 发布到 GitHub Release 供公开直接下载
+      # 6. 发布到 GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: success()
         continue-on-error: true
         with:
-          tag_name: 3.2.2-zk345
-          name: DolphinScheduler 3.2.2 (ZooKeeper 3.4.5)
-          body: "DolphinScheduler 3.2.2 compiled with ZooKeeper 3.4.5 support."
+          tag_name: 3.2.2-zk34
+          name: DolphinScheduler 3.2.2 (Compatible with ZK 3.4.x)
+          body: "DolphinScheduler 3.2.2 compiled with -Dzk-3.4 profile to support ZK 3.4.x server."
           files: dolphinscheduler-dist/target/*.tar.gz
           draft: false
           prerelease: false
