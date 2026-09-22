@@ -1,3 +1,4 @@
+```yaml
 name: Build DolphinScheduler 3.2.2 for ZooKeeper 3.4.x
 
 on:
@@ -11,12 +12,15 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout Official 3.2.2 Tag
+      # 1. 检出官方 DolphinScheduler 3.2.2
+      - name: Checkout DolphinScheduler 3.2.2
         uses: actions/checkout@v4
         with:
           repository: apache/dolphinscheduler
           ref: 3.2.2
+          fetch-depth: 1
 
+      # 2. JDK 8
       - name: Setup JDK 8
         uses: actions/setup-java@v4
         with:
@@ -24,52 +28,73 @@ jobs:
           java-version: '8'
           cache: maven
 
+      # 3. 确认 Java / Maven 环境
+      - name: Check Build Environment
+        run: |
+          java -version
+          ./mvnw -version
+
+      # 4. 格式化源码
       - name: Apply Spotless
         run: ./mvnw spotless:apply
 
-      - name: Build Binary Package
+      # 5. 确认 ZooKeeper Profile
+      - name: Verify ZooKeeper Dependency
         run: |
-          ./mvnw clean install \
-            -Prelease \
+          ./mvnw dependency:tree \
+            -Dincludes=org.apache.zookeeper:zookeeper,org.apache.curator:curator-framework,org.apache.curator:curator-client,org.apache.curator:curator-recipes \
             -Dzk-3.4 \
             -DskipTests \
+            -Dspotless.skip=true
+
+      # 6. 构建发行版
+      - name: Build Binary Package
+        run: |
+          ./mvnw clean package \
+            -Prelease \
+            -Dzk-3.4 \
+            -Dmaven.test.skip=true \
             -Dspotless.check.skip=true \
             -DskipDepCheck=true \
             -Dcheckstyle.skip=true \
             -T 2C
-            
-      - name: Verify ZooKeeper Version
-        run: |
-          echo "ZooKeeper dependencies:"
-          ./mvnw dependency:tree -Dincludes=org.apache.zookeeper:zookeeper
-          
+
+      # 7. 检查最终产物
       - name: Verify Generated Artifacts
         run: |
-          ls -lh dolphinscheduler-dist/target/*.tar.gz
-          
+          echo "Generated artifacts:"
+          ls -lh dolphinscheduler-dist/target/
 
+          echo
+          echo "Binary package:"
+          ls -lh dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
+
+      # 8. 上传 Actions Artifact
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: dolphinscheduler-3.2.2-zk34
           path: dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
+          if-no-files-found: error
 
+      # 9. 创建 GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: success()
-        continue-on-error: true
         with:
           tag_name: 3.2.2-zk34
-          name: DolphinScheduler 3.2.2 (ZooKeeper 3.4.x)
+          name: DolphinScheduler 3.2.2 - ZooKeeper 3.4
           body: |
-            DolphinScheduler 3.2.2
-            Built with the official ZooKeeper 3.4 compatibility profile.
+            DolphinScheduler 3.2.2 custom build.
 
-            Build:
-            - Apache DolphinScheduler 3.2.2
-            - JDK 8
-            - Maven
-            - -Dzk-3.4
+            ZooKeeper compatibility:
+            - ZooKeeper client: 3.4.14
+            - Curator: 4.3.0
+            - Build profile: -Dzk-3.4
+
+            Target ZooKeeper server:
+            - ZooKeeper 3.4.x
           files: dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
           draft: false
           prerelease: false
+```
