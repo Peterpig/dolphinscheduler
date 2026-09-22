@@ -38,13 +38,7 @@ jobs:
         run: |
           ./mvnw spotless:apply
 
-      # 5. Fix guava-retrying dynamic Guava dependency
-      #
-      # guava-retrying:2.0.0 declares:
-      # com.google.guava:guava:[10.+,)
-      #
-      # DolphinScheduler 3.2.2 already manages Guava as 31.1-jre,
-      # so exclude the problematic transitive Guava dependency.
+      # 5. Fix guava-retrying transitive Guava dependency
       - name: Patch guava-retrying Dependency
         run: |
           python3 - <<'PY'
@@ -86,61 +80,49 @@ jobs:
           echo "===== Verify guava-retrying patch ====="
           grep -A12 -B2 "guava-retrying" dolphinscheduler-common/pom.xml
 
-      # 6. Verify Guava dependency
-      - name: Verify Guava Dependency
-        run: |
-          ./mvnw \
-            -pl dolphinscheduler-common \
-            -am \
-            dependency:tree \
-            -Dincludes=com.google.guava:guava \
-            -Dzk-3.4 \
-            -Dmaven.test.skip=true \
-            -Dspotless.skip=true
-
-      # 7. Verify ZooKeeper dependency
-      - name: Verify ZooKeeper Dependency
-        run: |
-          ./mvnw \
-            -pl dolphinscheduler-common \
-            -am \
-            dependency:tree \
-            -Dincludes=org.apache.zookeeper:zookeeper,org.apache.curator:curator-framework,org.apache.curator:curator-client,org.apache.curator:curator-recipes \
-            -Dzk-3.4 \
-            -Dmaven.test.skip=true \
-            -Dspotless.skip=true
-
-      # 8. Build DolphinScheduler binary package
+      # 6. Build binary package
       - name: Build Binary Package
         run: |
           ./mvnw clean package \
             -Prelease \
             -Dzk-3.4 \
+            -Dbuild.assembly.skip=false \
             -Dmaven.test.skip=true \
             -Dspotless.check.skip=true \
             -DskipDepCheck=true \
             -Dcheckstyle.skip=true \
             -T 2C
 
-      # 9. Verify generated package
+      # 7. Verify final binary package
       - name: Verify Generated Artifacts
         run: |
           echo "===== dolphinscheduler-dist/target ====="
           ls -lh dolphinscheduler-dist/target/
 
-          echo
-          echo "===== Binary Packages ====="
-          ls -lh dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
+          PACKAGE="dolphinscheduler-dist/target/apache-dolphinscheduler-3.2.2-bin.tar.gz"
 
-      # 10. Upload build artifact
+          test -f "$PACKAGE"
+
+          SIZE=$(stat -c%s "$PACKAGE")
+          SIZE_MB=$((SIZE / 1024 / 1024))
+
+          echo "Final binary package size: ${SIZE_MB} MB"
+
+          if [ "$SIZE" -gt 524288000 ]; then
+            echo "ERROR: Binary package is larger than 500 MB"
+            echo "The final assembly/symlink consolidation step may not have executed."
+            exit 1
+          fi
+
+      # 8. Upload artifact
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: dolphinscheduler-3.2.2-zk34
-          path: dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
+          path: dolphinscheduler-dist/target/apache-dolphinscheduler-3.2.2-bin.tar.gz
           if-no-files-found: error
 
-      # 11. Create GitHub Release
+      # 9. Create GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: success()
@@ -151,7 +133,6 @@ jobs:
           body: |
             DolphinScheduler 3.2.2 custom binary build.
 
-            Compatibility configuration:
             - DolphinScheduler: 3.2.2
             - ZooKeeper client: 3.4.14
             - Curator: 4.3.0
@@ -159,7 +140,7 @@ jobs:
             - Guava: 31.1-jre
             - guava-retrying transitive Guava dependency excluded
 
-            This build is intended for deployment against ZooKeeper 3.4.x servers.
-          files: dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
+            Built for ZooKeeper 3.4.x compatibility.
+          files: dolphinscheduler-dist/target/apache-dolphinscheduler-3.2.2-bin.tar.gz
           draft: false
           prerelease: false
