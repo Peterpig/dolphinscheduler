@@ -1,0 +1,79 @@
+name: Build DolphinScheduler 3.2.2 with ZooKeeper 3.4.5
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      # 1. 拉取官方 3.2.2 release
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: 3.2.2-release
+
+      # 2. JDK 8
+      - name: Setup JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      # 3. 修改 ZooKeeper 版本并排除缺失的旧版依赖
+      - name: Modify ZooKeeper version
+        run: |
+          python3 -c "import re; f='dolphinscheduler-bom/pom.xml'; c=open(f, encoding='utf-8').read().replace('<zookeeper.version>3.4.14</zookeeper.version>', '<zookeeper.version>3.4.5</zookeeper.version>'); excl='<exclusion><groupId>com.sun.jmx</groupId><artifactId>jmxri</artifactId></exclusion><exclusion><groupId>com.sun.jdmk</groupId><artifactId>jmxtools</artifactId></exclusion><exclusion><groupId>javax.jms</groupId><artifactId>jms</artifactId></exclusion></exclusions>'; open(f, 'w', encoding='utf-8').write(re.sub(r'</exclusions>', excl, c, count=1))"
+
+          echo "Check ZooKeeper version in pom.xml:"
+          grep -n "zookeeper.version" dolphinscheduler-bom/pom.xml
+
+      # 4. 自动修复格式
+      - name: Apply Spotless
+        run: ./mvnw spotless:apply
+
+      # 5. 构建完整发行包
+      - name: Build
+        run: |
+          ./mvnw -U \
+            -pl dolphinscheduler-dist \
+            -am \
+            clean install \
+            -Dzk-3.4 \
+            -DskipTests \
+            -Dspotless.check.skip=true \
+            -DskipDepCheck=true \
+            -T 1
+
+      # 6. 验证最终使用的 ZooKeeper
+      - name: Verify ZooKeeper
+        run: |
+          ./mvnw dependency:tree \
+            -pl dolphinscheduler-registry/dolphinscheduler-registry-plugins/dolphinscheduler-registry-zookeeper \
+            -Dincludes=org.apache.zookeeper:zookeeper \
+            -Dzk-3.4
+
+      # 7. 上传 DolphinScheduler 安装包到 Workflow Artifact
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dolphinscheduler-3.2.2-zk345
+          path: dolphinscheduler-dist/target/*.tar.gz
+
+      # 8. 发布到 GitHub Releases 供直接公开下载
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: success()
+        continue-on-error: true
+        with:
+          tag_name: 3.2.2-zk345
+          name: DolphinScheduler 3.2.2 (ZooKeeper 3.4.5)
+          body: "Build DolphinScheduler 3.2.2 with ZooKeeper 3.4.5"
+          files: dolphinscheduler-dist/target/*.tar.gz
+          draft: false
+          prerelease: false
