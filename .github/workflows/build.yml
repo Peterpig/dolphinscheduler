@@ -28,42 +28,7 @@ jobs:
       # 3. 修改 ZooKeeper 版本并排除缺失的旧版依赖
       - name: Modify ZooKeeper version
         run: |
-          python3 -c "
-          with open('dolphinscheduler-bom/pom.xml', 'r', encoding='utf-8') as f:
-              content = f.read()
-
-          # Replace zookeeper.version in zk-3.4 profile
-          content = content.replace('<zookeeper.version>3.4.14</zookeeper.version>', '<zookeeper.version>3.4.5</zookeeper.version>')
-
-          # Locate zookeeper dependency block and add exclusions
-          zk_pos = content.find('<artifactId>zookeeper</artifactId>')
-          if zk_pos != -1:
-              excl_pos = content.find('</exclusions>', zk_pos)
-              if excl_pos != -1:
-                  to_insert = '''                    <exclusion>
-                          <groupId>com.sun.jmx</groupId>
-                          <artifactId>jmxri</artifactId>
-                      </exclusion>
-                      <exclusion>
-                          <groupId>com.sun.jdmk</groupId>
-                          <artifactId>jmxtools</artifactId>
-                      </exclusion>
-                      <exclusion>
-                          <groupId>javax.jms</groupId>
-                          <artifactId>jms</artifactId>
-                      </exclusion>
-  '''
-                  content = content[:excl_pos] + to_insert + content[excl_pos:]
-                  with open('dolphinscheduler-bom/pom.xml', 'w', encoding='utf-8') as f:
-                      f.write(content)
-                  print('Successfully added ZooKeeper 3.4.5 exclusions and updated version.')
-              else:
-                  print('ERROR: Could not find </exclusions> after zookeeper artifactId')
-                  exit(1)
-          else:
-              print('ERROR: Could not find zookeeper artifactId')
-              exit(1)
-          "
+          python3 -c "import re; f='dolphinscheduler-bom/pom.xml'; c=open(f, encoding='utf-8').read().replace('<zookeeper.version>3.4.14</zookeeper.version>', '<zookeeper.version>3.4.5</zookeeper.version>'); excl='<exclusion><groupId>com.sun.jmx</groupId><artifactId>jmxri</artifactId></exclusion><exclusion><groupId>com.sun.jdmk</groupId><artifactId>jmxtools</artifactId></exclusion><exclusion><groupId>javax.jms</groupId><artifactId>jms</artifactId></exclusion></exclusions>'; open(f, 'w', encoding='utf-8').write(re.sub(r'</exclusions>', excl, c, count=1))"
 
           echo "Check ZooKeeper version in pom.xml:"
           grep -n "zookeeper.version" dolphinscheduler-bom/pom.xml
