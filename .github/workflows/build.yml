@@ -1,4 +1,4 @@
-name: Build DolphinScheduler 3.2.2 for ZooKeeper 3.4.x Server
+name: Build DolphinScheduler 3.2.2 for ZooKeeper 3.4.x
 
 on:
   workflow_dispatch:
@@ -11,14 +11,12 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1. 检出官方 3.2.2 标签
       - name: Checkout Official 3.2.2 Tag
         uses: actions/checkout@v4
         with:
           repository: apache/dolphinscheduler
           ref: 3.2.2
 
-      # 2. 配置 JDK 8 环境与 Maven 缓存
       - name: Setup JDK 8
         uses: actions/setup-java@v4
         with:
@@ -26,18 +24,12 @@ jobs:
           java-version: '8'
           cache: maven
 
-      # 3. 自动格式化代码，避免 Spotless 检查失败
       - name: Apply Spotless
         run: ./mvnw spotless:apply
 
-      # 4. 执行完整打包
-      # 说明：
-      # - -Prelease: 触发 Assembly 打包生成 .tar.gz 安装包
-      # - -Dzk-3.4: 开启官方 ZK 3.4.x 兼容 Profile
-      # - 不使用 -Drevision，避免破坏 BOM 依赖锁；直接使用 3.2.2 原生版本
       - name: Build Binary Package
         run: |
-          ./mvnw clean package \
+          ./mvnw clean install \
             -Prelease \
             -Dzk-3.4 \
             -DskipTests \
@@ -45,34 +37,39 @@ jobs:
             -DskipDepCheck=true \
             -Dcheckstyle.skip=true \
             -T 2C
-
-      # 5. 验证编译生成的二进制安装包
+            
+      - name: Verify ZooKeeper Version
+        run: |
+          echo "ZooKeeper dependencies:"
+          ./mvnw dependency:tree -Dincludes=org.apache.zookeeper:zookeeper
+          
       - name: Verify Generated Artifacts
         run: |
-          echo "Checking generated tar.gz files in dolphinscheduler-dist/target:"
           ls -lh dolphinscheduler-dist/target/*.tar.gz
+          
 
-      # 6. 上传安装包到 Artifacts
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: dolphinscheduler-3.2.2-zk34
           path: dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
 
-      # 7. 发布到 GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: success()
         continue-on-error: true
         with:
           tag_name: 3.2.2-zk34
-          name: DolphinScheduler 3.2.2 (ZK 3.4.x Compatible)
+          name: DolphinScheduler 3.2.2 (ZooKeeper 3.4.x)
           body: |
-            ## DolphinScheduler 3.2.2 二进制发行包 (支持 ZooKeeper 3.4.x)
-            
-            - **源码基线**: Apache DolphinScheduler 3.2.2 Release Tag
-            - **ZK 兼容 profile**: `-Dzk-3.4` (内置兼容 ZK 3.4.x 协议，已自动排除旧版 Sun/JMS 依赖)
-            - **编译环境**: JDK 8 / Maven
+            DolphinScheduler 3.2.2
+            Built with the official ZooKeeper 3.4 compatibility profile.
+
+            Build:
+            - Apache DolphinScheduler 3.2.2
+            - JDK 8
+            - Maven
+            - -Dzk-3.4
           files: dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
           draft: false
           prerelease: false
