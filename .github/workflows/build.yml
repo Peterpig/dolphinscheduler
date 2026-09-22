@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1. 拉取仓库代码
+      # 1. 拉取代码
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -23,14 +23,15 @@ jobs:
           java-version: '8'
           cache: maven
 
-      # 3. 自动修复并格式化代码
+      # 3. 自动格式化代码（避免 Spotless 检查不通过导致中断）
       - name: Apply Spotless
         run: ./mvnw spotless:apply
 
-      # 4. 开启 -Dzk-3.4 进行全量编译打包
-      - name: Full Build with ZK 3.4 Profile
+      # 4. 构建二进制发行包（核心：同时添加 -Prelease 开启二进制打包 和 -Dzk-3.4 开启 ZK 兼容）
+      - name: Build Binary Tarball
         run: |
-          ./mvnw clean install \
+          ./mvnw clean package \
+            -Prelease \
             -Dzk-3.4 \
             -DskipTests \
             -Dspotless.check.skip=true \
@@ -38,22 +39,28 @@ jobs:
             -Dcheckstyle.skip=true \
             -T 2C
 
-      # 5. 上传编译产物到 Workflow Artifact
+      # 5. 在 CI 日志中验证生成的二进制包路径，确保包确实存在
+      - name: Verify Generated Artifacts
+        run: |
+          echo "Checking generated tar.gz files in dolphinscheduler-dist/target:"
+          ls -lh dolphinscheduler-dist/target/*.tar.gz
+
+      # 6. 上传安装包到 Workflow Artifacts
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dolphinscheduler-3.2.2-zk34
-          path: dolphinscheduler-dist/target/*.tar.gz
+          name: dolphinscheduler-3.2.2-bin-zk34
+          path: dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
 
-      # 6. 发布到 GitHub Release
+      # 7. 发布到 GitHub Releases 供公开下载
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: success()
         continue-on-error: true
         with:
           tag_name: 3.2.2-zk34
-          name: DolphinScheduler 3.2.2 (Compatible with ZK 3.4.x)
-          body: "DolphinScheduler 3.2.2 compiled with -Dzk-3.4 profile to support ZK 3.4.x server."
-          files: dolphinscheduler-dist/target/*.tar.gz
+          name: DolphinScheduler 3.2.2 (ZK 3.4.x Compatible)
+          body: "DolphinScheduler 3.2.2 binary build with -Dzk-3.4 profile for ZooKeeper 3.4.x cluster."
+          files: dolphinscheduler-dist/target/apache-dolphinscheduler-*-bin.tar.gz
           draft: false
           prerelease: false
